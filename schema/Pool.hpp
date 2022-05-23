@@ -39,9 +39,11 @@ namespace endlessnftft
         name token_contract;
         block_timestamp started_at;
         name pool_type;
+        uint8_t period_days;
+
         // CustomMap templates;
 
         uint64_t primary_key() const { return id; }
     };
-    EOSIO_REFLECT(Pool, id, token_quantity, token_contract, started_at, pool_type);
+    EOSIO_REFLECT(Pool, id, token_quantity, token_contract, started_at, pool_type, period_days);
 }  // namespace endlessnftft

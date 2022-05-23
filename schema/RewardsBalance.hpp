@@ -15,17 +15,15 @@ namespace endlessnftft
     using std::vector;
     using std::map;
 
-    struct AssetBurners
+    struct RewardsBalance
     {
         uint64_t id;
-        uint64_t pool_id;
-        uint64_t pool_sub_id; // cannot be primary index.. can be multiple subpools of same id..
-        uint64_t amount;
         name account;
+        uint64_t pool_id;
+        asset quantity;
 
         uint64_t primary_key() const { return id; }
-        uint64_t by_pool_id() const { return pool_id; }
-        uint64_t by_subpool_id() const { return pool_sub_id; }
+        uint64_t by_account() const { return account.value; }
     };
-    EOSIO_REFLECT(AssetBurners, id, pool_id, pool_sub_id, amount, account);
+    EOSIO_REFLECT(RewardsBalance, id, account, pool_id, quantity);
 }  // namespace endlessnftft

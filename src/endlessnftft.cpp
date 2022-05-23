@@ -156,27 +156,153 @@ void endlessnftft_contract::setschema(uint64_t pool_id, name schema, uint8_t per
     });
 }
 
-void endlessnftft_contract::askburn(name account, uint64_t pool_id, uint64_t asset_id) {
-    if (has_auth(get_self())) {
-        require_auth(get_self());
-    } else {
-        require_auth(account);
+void endlessnftft_contract::giverewards(uint64_t pool_id) {
+    require_auth(get_self());
+
+    map<uint64_t, uint64_t> burned_of;
+
+    AssetBurnersTable abt(get_self(), get_self().value);
+    auto abtp = abt.get_index<"bypool"_n>();
+    auto abtp_itr = abtp.lower_bound(pool_id);
+
+    while (abtp_itr != abtp.end() && abtp_itr->pool_id == pool_id) {
+        PoolTable pt(get_self(), get_self().value);
+        auto pt_itr = pt.find(abtp_itr->pool_id);
+        check(pt_itr != pt.end(), "Pool not found");
+
+        check (pt_itr->started_at > pt_itr->started_at.min(), "Pool is not started");
+        check (pt_itr->pool_type == templates_pool, "Pool is not templates pool");
+
+        PoolTemplatesTable pt_tbl(get_self(), get_self().value);
+        auto pt_tbl_itr = pt_tbl.find(abtp_itr->pool_sub_id);
+        check(pt_tbl_itr != pt_tbl.end(), "Template not found in subpool");
+
+        asset total = pt_itr->token_quantity;
+        uint8_t percent = pt_tbl_itr->percent;
+        uint8_t days = pt_itr->period_days;
+
+        if (burned_of.find(abtp_itr->pool_sub_id) == burned_of.end()) {
+            auto abtsp = abt.get_index<"bysubpool"_n>();
+            auto abtsp_itr = abtsp.lower_bound(abtp_itr->pool_sub_id);
+            uint64_t burned = 0;
+            while (abtsp_itr != abtsp.end() && abtsp_itr->pool_sub_id == abtp_itr->pool_sub_id) {
+                burned += abtsp_itr->amount;
+                abtsp_itr++;
+            }
+            burned_of[abtp_itr->pool_sub_id] = burned;
+        }
+        uint64_t template_burned_assets = burned_of[abtp_itr->pool_sub_id];
+
+        uint64_t templately = total.amount * percent / 100;
+        uint64_t templately_daily = templately / days;
+        uint64_t assetly_templately_daily = templately_daily / template_burned_assets;
+        uint64_t reward_amount = assetly_templately_daily * abtp_itr->amount;
+
+        asset reward = asset(reward_amount, total.symbol);
+
+        RewardsBalanceTable rt(get_self(), get_self().value);
+        auto rtba = rt.get_index<"byaccount"_n>();
+        auto rtba_itr = rtba.lower_bound(abtp_itr->account.value);
+        bool rt_found = false;
+        uint64_t rt_id = 0;
+        while (rtba_itr != rtba.end() && rtba_itr->account == abtp_itr->account) {
+            if (rtba_itr->pool_id == abtp_itr->pool_id) {
+                rt_found = true;
+                rt_id = rtba_itr->id;        
+            }
+            rtba_itr++;
+        }
+
+        if (rt_found == true) {
+            rt.modify(rt.find(rt_id), get_self(), [&](auto& row) {
+                row.quantity += reward;
+            });
+        } else {
+            rt.emplace(get_self(), [&](auto& row) {
+                row.id = rt.available_primary_key();
+                row.account = abtp_itr->account;
+                row.pool_id = abtp_itr->pool_id;
+                row.quantity = reward;
+            });
+        }
+
+        abtp_itr++;
     }
+}
+
+// void endlessnftft_contract::askreward(name account, ) {
+//     if (has_auth(get_self())) {
+//         require_auth(get_self());
+//     } else {
+//         require_auth(account);
+//     }
+
+//     AssetBurnersTable abt(get_self(), get_self().value);
+//     auto abtp = abt.get_index<"byaccount"_n>();
+//     auto abitr = abtp.lower_bound(account.value);
+//     if (abitr == abtp.end() || abitr->account != account) {
+//         abt.emplace(get_self(), [&](auto& ab) {
+//             ab.id = abt.available_primary_key();
+//             ab.account = account;
+//             ab.reward_asked = true;
+//         });
+//     } else {
+//         abt.modify(abitr, get_self(), [&](auto& ab) {
+//             ab.reward_asked = true;
+//         });
+//     }
+
+//     PoolTable pools(get_self(), get_self().value);
+//     auto pool_itr = pools.find(abtp->pool_id);
+//     check(pool_itr != pools.end(), "Pool not found");
+//     check(pool_itr->started == true, "Pool not started");
+//     check(pool_itr->finished == false, "Pool not finished");
+
+//     if (pool_itr->pool_type == templates_pool) {
+//         PoolTemplatesTable ptt(get_self(), get_self().value);
+
+//         auto pttitr 
+//     } else {
+//         check(false, "Not implemented");
+//     }
+
+//     asset total_pool_reward = pool_itr->token_quantity;
+//     uint32_t number_of_days = pool_itr->number_of_days;
+
+//     asset reward_per_day = total_pool_reward / number_of_days;
+
+//     PoolTemplatesTable pt(get_self(), get_self().value);
+//     auto ptbp = pt.get_index<"bypool"_n>();
+
+
+//     asset remaining = pool_itr->token_quantity - pool_itr->claimed_quantity;
+
+//     asset daily_of_template = total_pool / number_of_days / template_percentage;
+
+//     asset daily = daily_of_template;
+
+//     asset for_user = daily / number_of_assets_of_template;
+
+//     // distribute rewards based from the current remaining amount in the pool
+//     // between every one participated since day one equally
+//     // the amount per each is equal to be distributed.. accordingly to each template distribution..
+//     // amount to be distributed per day per template.. is known..
+//     // then we divide by the number of participants..
+//     // 
+// }
+
+void endlessnftft_contract::testaskburn(name account, uint64_t pool_id, int32_t template_id) {
+    require_auth(get_self());
+    
+    askburn_template(account, pool_id, template_id);
+}
+
+void endlessnftft_contract::askburn(name account, uint64_t pool_id, uint64_t asset_id) {
+    require_auth(account);
 
     atomicassets::assets_t assets = atomicassets::get_assets(get_self());
     auto asset_itr = assets.find(asset_id);
     check(asset_itr != assets.end(), "Asset not found");
-
-    PoolTemplatesTable pt(get_self(), get_self().value);
-    auto ptbt = pt.get_index<"bytempl"_n>();
-
-
-    // for (auto& pt_itr : pt) {
-    //     if (pt_itr.pool_id == pool_id && pt_itr.template_id == asset_itr->template_id) {
-    //         subpool_id = pt_itr.id;
-    //         subpool_found = true;
-    //     }
-    // }
 
     PoolTable pool(get_self(), get_self().value);
     auto pool_itr = pool.find(pool_id);
@@ -185,41 +311,7 @@ void endlessnftft_contract::askburn(name account, uint64_t pool_id, uint64_t ass
     check(pool_itr->started_at > pool_itr->started_at.min(), "Pool not started");
 
     if (pool_itr->pool_type == templates_pool) {
-        uint64_t subpool_id = 0;
-        bool subpool_found = false;
-        auto ptitr = ptbt.lower_bound(asset_itr->template_id);
-        while (ptitr != ptbt.end() && ptitr->template_id == asset_itr->template_id) {
-            if (ptitr->pool_id == pool_id) {
-                subpool_id = ptitr->id;
-                subpool_found = true;
-            }
-            ptitr++;
-        }
-        check(subpool_found, "Template not found in pool " + std::to_string(asset_itr->template_id));
-
-        AssetBurnersTable ab(get_self(), get_self().value);
-        auto abbp = ab.get_index<"bypool"_n>();
-        auto abitr = abbp.lower_bound(pool_id);
-        bool found = false;
-        while (abitr != abbp.end() && abitr->pool_id == pool_id) {
-            if(abitr->account == account && abitr->pool_sub_id == ptitr->id) {
-                ab.modify(ab.find(abitr->id), get_self(), [&](auto& abrow) {
-                    abrow.amount += 1;
-                });
-                found = true;
-            }
-            abitr++;
-        }
-
-        if (!found) {
-            ab.emplace(get_self(), [&](auto& abrow) {
-                abrow.id = ab.available_primary_key();
-                abrow.pool_id = pool_id;
-                abrow.pool_sub_id = ptitr->id;
-                abrow.account = account;
-                abrow.amount = 1;
-            });
-        }
+        askburn_template(account, pool_id, asset_itr->template_id);
     } else if (pool_itr->pool_type == schemas_pool) {
         check(false, "Not implemented");
     } else if (pool_itr->pool_type == attributes_pool) {
@@ -229,8 +321,7 @@ void endlessnftft_contract::askburn(name account, uint64_t pool_id, uint64_t ass
     // TODO: actually burn the nft..
 }
 
-
-void endlessnftft_contract::initpool(uint64_t pool_id, asset token_quantity, name token_contract, name pool_type)
+void endlessnftft_contract::initpool(uint64_t pool_id, asset token_quantity, name token_contract, name pool_type, uint8_t period_days)
 {
     require_auth(default_contract_account);
 
@@ -244,6 +335,11 @@ void endlessnftft_contract::initpool(uint64_t pool_id, asset token_quantity, nam
     check(id == pool_id, "Unexpected pool id");
 
     check(
+        period_days == 7 || period_days == 30 || period_days == 90,
+        "Invalid period days"
+    );
+
+    check(
         pool_type == templates_pool ||
         pool_type == schemas_pool ||
         pool_type == attributes_pool,
@@ -255,6 +351,7 @@ void endlessnftft_contract::initpool(uint64_t pool_id, asset token_quantity, nam
         p.token_quantity = token_quantity;
         p.token_contract = token_contract;
         p.pool_type = pool_type;
+        p.period_days = period_days;
     });
 }
 
@@ -322,4 +419,5 @@ EOSIO_ABIGEN(actions(endlessnftft::actions),
     table(pool_schemas_table_name,endlessnftft::PoolSchemas),
     table(pool_attrs_table_name,endlessnftft::PoolAttrs),
     table(asset_burners_table_name,endlessnftft::AssetBurners),
+    table(rewards_balance_table_name,endlessnftft::RewardsBalance),
     ricardian_clause("Class 1 clause", endlessnftft::ricardian_clause))

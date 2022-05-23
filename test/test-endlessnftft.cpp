@@ -98,18 +98,20 @@ TEST_CASE("Short description of first test", "[test]")
     auto bob = t.as("bob"_n);
     auto self = t.as(endlessnftft::default_contract_account);
 
+    uint8_t period_days = 7;
     name pool_type = "pooltemplate"_n;
     uint64_t pool_id = 1;
-    asset token = asset(1, symbol("EOS", 4));
+    asset token = asset(56, symbol("EOS", 4));
     int32_t template_id = 222;
-    uint8_t percent = 100;
+    uint8_t percent = 75;
 
     expect(
         self.trace<endlessnftft::actions::initpool>(
             pool_id,
             token,
             "eosio.token"_n,
-            pool_type
+            pool_type,
+            period_days
         ),
         nullptr
     );
@@ -123,6 +125,15 @@ TEST_CASE("Short description of first test", "[test]")
         nullptr
     );
 
+    expect(
+        self.trace<endlessnftft::actions::settemplate>(
+            pool_id,
+            template_id+1,
+            25
+        ),
+        nullptr
+    );
+
     t.as("eosio"_n).act<token::actions::transfer>("eosio"_n, "endlessnftft"_n, token, "");
 
     expect(
@@ -131,6 +142,38 @@ TEST_CASE("Short description of first test", "[test]")
         ),
         nullptr
     );
+
+    expect(
+        self.trace<endlessnftft::actions::testaskburn>(
+            "alice"_n,
+            pool_id,
+            template_id
+        ),
+        nullptr
+    );
+
+    expect(
+        self.trace<endlessnftft::actions::testaskburn>(
+            "bob"_n,
+            pool_id,
+            template_id
+        ),
+        nullptr
+    );
+
+    expect(
+        self.trace<endlessnftft::actions::giverewards>(
+            pool_id
+        ),
+        nullptr
+    );
+
+    vector<endlessnftft::RewardsBalance> rewards = endlessnftft::get_rewards("alice"_n);
+
+    check(rewards.size() == 1, "Expected 1 reward");
+    check(rewards[0].pool_id == pool_id, "Expected pool_id to be " + to_string(pool_id));
+    print("rewards: ", rewards[0].quantity.amount);
+    check(rewards[0].quantity.amount == 3, "Expected quantity to be 3");
 
     // asset token = s2a("1.0000 EOS");
     // map<uint32_t, uint8_t> templates = {
