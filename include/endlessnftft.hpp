@@ -37,12 +37,13 @@ namespace endlessnftft
 
     // The account this contract is normally deployed to
     inline constexpr auto default_contract_account = "endlessnftft"_n;
-    inline constexpr auto pools_table_name = "poolsx"_n;
-    inline constexpr auto pool_templates_table_name = "pooltemplsa"_n;
-    inline constexpr auto pool_schemas_table_name = "poolschemas"_n;
-    inline constexpr auto pool_attrs_table_name = "poolattrs"_n;
-    inline constexpr auto asset_burners_table_name = "assetburn"_n;
-    inline constexpr auto rewards_balance_table_name = "rewardsbal"_n;
+    inline constexpr auto pools_table_name = "poolsd"_n;
+    inline constexpr auto pool_templates_table_name = "pooltemplsd"_n;
+    inline constexpr auto pool_schemas_table_name = "poolschemasd"_n;
+    inline constexpr auto pool_attrs_table_name = "poolattrsd"_n;
+    inline constexpr auto asset_burners_table_name = "assetburncd"_n;
+    inline constexpr auto rewards_balance_table_name = "rewardsbalcd"_n;
+    inline constexpr auto bank_account = "nless.gm"_n;
 
     struct account
     {
@@ -158,7 +159,7 @@ namespace endlessnftft
                 abrow.account = account;
                 abrow.amount = 1;
             });
-        }    
+        }
     }
 
 
@@ -173,7 +174,7 @@ namespace endlessnftft
 
         // void sayhialice(const name& someone);
 
-        void initpool(uint64_t pool_id, asset token_quantity, name token_contract, name pool_type, uint8_t period_days);
+        void initpool(uint64_t pool_id, asset token_quantity, asset token_requirement, name token_contract, name pool_type, uint8_t period_days);
 
         void settemplate(uint64_t pool_id, int32_t template_id, uint8_t percent);
         
@@ -188,6 +189,8 @@ namespace endlessnftft
         void askburn(name account, uint64_t pool_id, uint64_t asset_id);
 
         void giverewards(uint64_t pool_id);
+
+        void claimreward(uint64_t pool_id, name account);
 
         // void editpool(uint32_t template_id);
 
@@ -220,14 +223,15 @@ namespace endlessnftft
     //   will leave the ricardian contracts blank.
     EOSIO_ACTIONS(endlessnftft_contract,
                   default_contract_account,
-                  action(initpool, pool_id, token_quantity, token_contract, pool_type),
+                  action(initpool, pool_id, token_quantity, token_requirement, token_contract, pool_type, period_days),
                   action(settemplate, pool_id, template_id, percent),
                   action(setschema, pool_id, schema, percent),
                   action(setattr, pool_id, schema, attr_name, attr_value, percent),
                   action(startpool, pool_id),
                   action(testaskburn, account, pool_id, template_id),
                   action(askburn, account, pool_id, asset_id),
-                  action(giverewards, pool_id)
+                  action(giverewards, pool_id),
+                  action(claimreward, pool_id, name account)
                     //   action(sayhi, ricardian_contract(sayhi_ricardian))
                 )
 

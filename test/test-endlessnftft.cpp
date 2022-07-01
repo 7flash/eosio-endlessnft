@@ -109,6 +109,7 @@ TEST_CASE("Short description of first test", "[test]")
         self.trace<endlessnftft::actions::initpool>(
             pool_id,
             token,
+            token,
             "eosio.token"_n,
             pool_type,
             period_days

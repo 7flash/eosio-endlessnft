@@ -13,17 +13,6 @@ endlessnftft_contract::endlessnftft_contract(name receiver, name code, datastrea
     /* NOP */
 }
 
-// void endlessnftft_contract::sayhi()
-// {
-//     print("Hi");
-// }
-
-// void endlessnftft_contract::sayhialice(const name& someone)
-// {
-//     check(someone == "alice"_n, "You may only say hi to Alice!");
-//     print("Hi, Alice!");
-// }
-
 void endlessnftft_contract::startpool(uint64_t pool_id) {
     require_auth(get_self());
 
@@ -48,44 +37,32 @@ void endlessnftft_contract::startpool(uint64_t pool_id) {
         "Token deposit must be " + std::to_string(expected_deposit.amount) + " but " + std::to_string(current_deposit.amount) + " was found"
     );
 
-    // check(
-    //     expected_deposit == current_deposit,
-    //     "Token deposit does not match. Expected: " + expected_deposit.to_string() + ", Actual: " + current_deposit.to_string()
-    // );
+    check(
+        expected_deposit == current_deposit,
+        "Token deposit does not match. Expected: " + expected_deposit.to_string() + ", Actual: " + current_deposit.to_string()
+    );
+
+    action(
+        permission_level{get_self(), "active"_n},
+        pool_itr->token_contract,
+        "transfer"_n,
+        make_tuple(
+            get_self(),
+            bank_account,
+            pool_itr->token_quantity,
+            "startpool " + to_string(pool_id)
+        )
+    ).send();
+
+    asset token_quantity_second = asset(
+        pool_itr->token_quantity.amount - (pool_itr->token_quantity.amount / 10),
+        pool_itr->token_quantity.symbol
+    );
 
     pools.modify(pool_itr, _self, [&](auto& p) {
+        p.token_quantity = token_quantity_second;
         p.started_at = current_block_time();
     });
-
-    // PoolTemplatesTable pt(get_self(), get_self().value);
-    // auto ptbp = pt.get_index<"bypool"_n>();
-    // auto ptitr = ptbp.lower_bound(pool_id);
-    // uint8_t ptpercent = 0;
-    // while (ptitr != ptbp.end() && ptitr->pool_id == pool_id) {
-    //     ptpercent += ptitr->percent;
-    //     ptitr++;
-    // }
-
-    // PoolSchemasTable ps(get_self(), get_self().value);
-    // auto psbp = ps.get_index<"bypool"_n>();
-    // auto psitr = psbp.lower_bound(pool_id);
-    // uint8_t pspercent = 0;
-    // while (psitr != psbp.end() && psitr->pool_id == pool_id) {
-    //     pspercent += psitr->percent;
-    //     psitr++;
-    // }
-
-    // check(pspercent == 100 || ptpercent == 100, "Pool must have 100% of templates or 100% of schemas");
-    // if (pspercent == 100) {
-    //     check(ptpercent == 0, "Pool must have 0% of templates if it has 100% of schemas");
-    // } else if (ptpercent == 100) {
-    //     check(pspercent == 0, "Pool must have 0% of schemas if it has 100% of templates");
-    // }
-    
-    // pools.modify(pool_itr, get_self(), [&](auto& pool) {
-    //     pool.started = true;
-        // pool.useschemas = pspercent == 100;
-    // });
 }
 
 void endlessnftft_contract::setattr(uint64_t pool_id, name schema, name attr_name, string attr_value, uint8_t percent) {
@@ -156,6 +133,51 @@ void endlessnftft_contract::setschema(uint64_t pool_id, name schema, uint8_t per
     });
 }
 
+void endlessnftft_contract::claimreward(uint64_t pool_id, name account) {
+    RewardsBalanceTable rt(get_self(), get_self().value);
+    auto rtba = rt.get_index<"byaccount"_n>();
+    auto rtba_itr = rtba.lower_bound(account.value);
+    
+    while (rtba_itr != rtba.end() && rtba_itr->account == account) {
+        if (rtba_itr->pool_id == pool_id) {
+            break;
+        }
+        rtba_itr++;
+    }
+    check (rtba_itr != rtba.end(), "balance not found where user " +
+        account.to_string() + " and pool " + to_string(pool_id)
+    );
+
+    PoolTable pt(get_self(), get_self().value);
+    auto pt_itr = pt.find(rtba_itr->pool_id);
+    check(pt_itr != pt.end(), "pool not found where id " + to_string(rtba_itr->pool_id));
+
+    asset account_balance = get_balance(
+        pt_itr->token_contract,
+        account,
+        (pt_itr->token_requirement).symbol.code()
+    );
+    check(account_balance >= pt_itr->token_requirement,
+        "token_requirement defined as " + pt_itr->token_requirement.to_string()
+    );
+
+    action(
+        permission_level{get_self(), "active"_n},
+        pt_itr->token_contract,
+        "transfer"_n,
+        make_tuple(
+            bank_account,
+            account,
+            rtba_itr->quantity,
+            "claimreward " + to_string(pool_id)
+        )
+    );
+
+    rt.modify(rt.find(rtba_itr->id), get_self(), [&](auto& row) {
+        row.quantity = asset(0, row.quantity.symbol);
+    });
+}
+
 void endlessnftft_contract::giverewards(uint64_t pool_id) {
     require_auth(get_self());
 
@@ -164,10 +186,11 @@ void endlessnftft_contract::giverewards(uint64_t pool_id) {
     AssetBurnersTable abt(get_self(), get_self().value);
     auto abtp = abt.get_index<"bypool"_n>();
     auto abtp_itr = abtp.lower_bound(pool_id);
+    check(abtp_itr != abtp.end(), "Pool must have burned tokens");
 
-    while (abtp_itr != abtp.end() && abtp_itr->pool_id == pool_id) {
+    while (abtp_itr != abtp.end()) {
         PoolTable pt(get_self(), get_self().value);
-        auto pt_itr = pt.find(abtp_itr->pool_id);
+        auto pt_itr = pt.find(pool_id);
         check(pt_itr != pt.end(), "Pool not found");
 
         check (pt_itr->started_at > pt_itr->started_at.min(), "Pool is not started");
@@ -185,12 +208,15 @@ void endlessnftft_contract::giverewards(uint64_t pool_id) {
             auto abtsp = abt.get_index<"bysubpool"_n>();
             auto abtsp_itr = abtsp.lower_bound(abtp_itr->pool_sub_id);
             uint64_t burned = 0;
-            while (abtsp_itr != abtsp.end() && abtsp_itr->pool_sub_id == abtp_itr->pool_sub_id) {
-                burned += abtsp_itr->amount;
-                abtsp_itr++;
+            if (abtsp_itr != abtsp.end()) {
+                while (abtsp_itr != abtsp.end() && abtsp_itr->pool_sub_id == abtp_itr->pool_sub_id) {
+                    burned += abtsp_itr->amount;
+                    abtsp_itr++;
+                }
             }
             burned_of[abtp_itr->pool_sub_id] = burned;
         }
+        
         uint64_t template_burned_assets = burned_of[abtp_itr->pool_sub_id];
 
         uint64_t templately = total.amount * percent / 100;
@@ -308,6 +334,15 @@ void endlessnftft_contract::askburn(name account, uint64_t pool_id, uint64_t ass
     auto pool_itr = pool.find(pool_id);
     check(pool_itr != pool.end(), "Pool not found");
 
+    asset account_balance = get_balance(
+        pool_itr->token_contract,
+        account,
+        (pool_itr->token_requirement).symbol.code()
+    );
+    check(account_balance >= pool_itr->token_requirement,
+        "token_requirement defined as " + pool_itr->token_requirement.to_string()
+    );
+
     check(pool_itr->started_at > pool_itr->started_at.min(), "Pool not started");
 
     if (pool_itr->pool_type == templates_pool) {
@@ -321,7 +356,7 @@ void endlessnftft_contract::askburn(name account, uint64_t pool_id, uint64_t ass
     // TODO: actually burn the nft..
 }
 
-void endlessnftft_contract::initpool(uint64_t pool_id, asset token_quantity, name token_contract, name pool_type, uint8_t period_days)
+void endlessnftft_contract::initpool(uint64_t pool_id, asset token_quantity, asset token_requirement, name token_contract, name pool_type, uint8_t period_days)
 {
     require_auth(default_contract_account);
 
@@ -349,6 +384,7 @@ void endlessnftft_contract::initpool(uint64_t pool_id, asset token_quantity, nam
     pools.emplace(default_contract_account, [&](auto& p) {
         p.id = pool_id;
         p.token_quantity = token_quantity;
+        p.token_requirement = token_requirement;
         p.token_contract = token_contract;
         p.pool_type = pool_type;
         p.period_days = period_days;
